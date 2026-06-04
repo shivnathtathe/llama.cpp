@@ -71,6 +71,9 @@ llama_context::llama_context(
     cparams.no_perf          = params.no_perf;
     cparams.pooling_type     = params.pooling_type;
     cparams.warmup           = false;
+    cparams.kv_backend       = params.kv_backend;
+    cparams.kv_path          = params.kv_path ? params.kv_path : "";
+    cparams.kv_window        = params.kv_window;
 
     cparams.n_ctx            = params.n_ctx           == 0    ? hparams.n_ctx_train           : params.n_ctx;
     cparams.rope_freq_base   = params.rope_freq_base  == 0.0f ? hparams.rope_freq_base_train  : params.rope_freq_base;
@@ -186,6 +189,15 @@ llama_context::llama_context(
 
     cparams.op_offload = params.op_offload;
     cparams.kv_unified = params.kv_unified;
+    if (cparams.kv_backend == LLAMA_KV_BACKEND_TYPE_SSD) {
+        cparams.offload_kqv = false;
+        if (cparams.kv_path.empty()) {
+            throw std::runtime_error("--kv-backend ssd requires --kv-path");
+        }
+        if (cparams.kv_window == 0) {
+            cparams.kv_window = 2048;
+        }
+    }
 
     // initialized later
     cparams.pipeline_parallel = false;
@@ -226,6 +238,11 @@ llama_context::llama_context(
     LLAMA_LOG_INFO("%s: causal_attn   = %d\n",   __func__, cparams.causal_attn);
     LLAMA_LOG_INFO("%s: flash_attn    = %s\n",   __func__, llama_flash_attn_type_name(params.flash_attn_type));
     LLAMA_LOG_INFO("%s: kv_unified    = %s\n",   __func__, cparams.kv_unified ? "true" : "false");
+    LLAMA_LOG_INFO("%s: kv_backend    = %s\n",   __func__, cparams.kv_backend == LLAMA_KV_BACKEND_TYPE_SSD ? "ssd" : "ram");
+    if (cparams.kv_backend == LLAMA_KV_BACKEND_TYPE_SSD) {
+        LLAMA_LOG_INFO("%s: kv_path       = %s\n", __func__, cparams.kv_path.c_str());
+        LLAMA_LOG_INFO("%s: kv_window     = %u\n", __func__, cparams.kv_window);
+    }
     LLAMA_LOG_INFO("%s: freq_base     = %.1f\n", __func__, cparams.rope_freq_base);
     LLAMA_LOG_INFO("%s: freq_scale    = %g\n",   __func__, cparams.rope_freq_scale);
     LLAMA_LOG_INFO("%s: n_rs_seq      = %u\n",   __func__, cparams.n_rs_seq);
@@ -3364,6 +3381,9 @@ llama_context_params llama_context_default_params() {
         /*.cb_eval_user_data           =*/ nullptr,
         /*.type_k                      =*/ GGML_TYPE_F16,
         /*.type_v                      =*/ GGML_TYPE_F16,
+        /*.kv_backend                  =*/ LLAMA_KV_BACKEND_TYPE_RAM,
+        /*.kv_path                     =*/ nullptr,
+        /*.kv_window                   =*/ 2048,
         /*.abort_callback              =*/ nullptr,
         /*.abort_callback_data         =*/ nullptr,
         /*.embeddings                  =*/ false,

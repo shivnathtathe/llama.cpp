@@ -20,7 +20,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
+#include <string>
 #include <vector>
+
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #ifdef __APPLE__
 #include <sys/types.h>
@@ -2368,4 +2376,239 @@ static ggml_backend_buffer_type_t ggml_backend_cpu_buffer_from_ptr_type(void) {
 ggml_backend_buffer_t ggml_backend_cpu_buffer_from_ptr(void * ptr, size_t size) {
     GGML_ASSERT((uintptr_t)ptr % TENSOR_ALIGNMENT == 0 && "buffer pointer must be aligned");
     return ggml_backend_buffer_init(ggml_backend_cpu_buffer_from_ptr_type(), ggml_backend_cpu_buffer_from_ptr_i, ptr, size);
+}
+
+// SSD backend buffer type
+
+static std::string ggml_backend_ssd_path = "llama-kv-cache.mmap";
+
+struct ggml_backend_ssd_buffer_context {
+    void * data = nullptr;
+    size_t size = 0;
+
+#ifdef _WIN32
+    HANDLE file = INVALID_HANDLE_VALUE;
+    HANDLE mapping = NULL;
+#else
+    int fd = -1;
+#endif
+};
+
+static bool ggml_backend_ssd_path_is_dir(const std::string & path) {
+#ifdef _WIN32
+    const DWORD attrs = GetFileAttributesA(path.c_str());
+    return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY);
+#else
+    struct stat st;
+    return stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+#endif
+}
+
+static std::string ggml_backend_ssd_file_path(void) {
+    std::string path = ggml_backend_ssd_path.empty() ? "llama-kv-cache.mmap" : ggml_backend_ssd_path;
+    if (ggml_backend_ssd_path_is_dir(path)) {
+#ifdef _WIN32
+        const char sep = '\\';
+#else
+        const char sep = '/';
+#endif
+        if (!path.empty() && path.back() != '/' && path.back() != '\\') {
+            path.push_back(sep);
+        }
+        path += "llama-kv-cache.mmap";
+    }
+    return path;
+}
+
+void ggml_backend_ssd_set_path(const char * path) {
+    ggml_backend_ssd_path = path && path[0] ? path : "llama-kv-cache.mmap";
+}
+
+static void * ggml_backend_ssd_buffer_get_base(ggml_backend_buffer_t buffer) {
+    GGML_ASSERT(buffer);
+    auto * ctx = (ggml_backend_ssd_buffer_context *) buffer->context;
+    return ctx->data;
+}
+
+static void ggml_backend_ssd_buffer_free_buffer(ggml_backend_buffer_t buffer) {
+    GGML_ASSERT(buffer);
+    auto * ctx = (ggml_backend_ssd_buffer_context *) buffer->context;
+
+    if (ctx) {
+#ifdef _WIN32
+        if (ctx->data) {
+            FlushViewOfFile(ctx->data, ctx->size);
+            UnmapViewOfFile(ctx->data);
+        }
+        if (ctx->mapping) {
+            CloseHandle(ctx->mapping);
+        }
+        if (ctx->file != INVALID_HANDLE_VALUE) {
+            CloseHandle(ctx->file);
+        }
+#else
+        if (ctx->data && ctx->data != MAP_FAILED) {
+            msync(ctx->data, ctx->size, MS_SYNC);
+            munmap(ctx->data, ctx->size);
+        }
+        if (ctx->fd >= 0) {
+            close(ctx->fd);
+        }
+#endif
+        delete ctx;
+    }
+}
+
+static void ggml_backend_ssd_buffer_memset_tensor(ggml_backend_buffer_t buffer, struct ggml_tensor * tensor, uint8_t value, size_t offset, size_t size) {
+    GGML_ASSERT(tensor);
+    memset((char *) tensor->data + offset, value, size);
+    GGML_UNUSED(buffer);
+}
+
+static void ggml_backend_ssd_buffer_set_tensor(ggml_backend_buffer_t buffer, struct ggml_tensor * tensor, const void * data, size_t offset, size_t size) {
+    GGML_ASSERT(tensor);
+    memcpy((char *) tensor->data + offset, data, size);
+    GGML_UNUSED(buffer);
+}
+
+static void ggml_backend_ssd_buffer_get_tensor(ggml_backend_buffer_t buffer, const struct ggml_tensor * tensor, void * data, size_t offset, size_t size) {
+    GGML_ASSERT(tensor);
+    memcpy(data, (const char *) tensor->data + offset, size);
+    GGML_UNUSED(buffer);
+}
+
+static bool ggml_backend_ssd_buffer_cpy_tensor(ggml_backend_buffer_t buffer, const struct ggml_tensor * src, struct ggml_tensor * dst) {
+    GGML_ASSERT(src);
+    if (ggml_backend_buffer_is_host(src->buffer)) {
+        memcpy(dst->data, src->data, ggml_nbytes(src));
+        return true;
+    }
+    GGML_UNUSED(buffer);
+    return false;
+}
+
+static void ggml_backend_ssd_buffer_clear(ggml_backend_buffer_t buffer, uint8_t value) {
+    GGML_ASSERT(buffer);
+    auto * ctx = (ggml_backend_ssd_buffer_context *) buffer->context;
+    memset(ctx->data, value, ctx->size);
+}
+
+static const struct ggml_backend_buffer_i ggml_backend_ssd_buffer_i = {
+    /* .free_buffer     = */ ggml_backend_ssd_buffer_free_buffer,
+    /* .get_base        = */ ggml_backend_ssd_buffer_get_base,
+    /* .init_tensor     = */ NULL,
+    /* .memset_tensor   = */ ggml_backend_ssd_buffer_memset_tensor,
+    /* .set_tensor      = */ ggml_backend_ssd_buffer_set_tensor,
+    /* .get_tensor      = */ ggml_backend_ssd_buffer_get_tensor,
+    /* .set_tensor_2d   = */ NULL,
+    /* .get_tensor_2d   = */ NULL,
+    /* .cpy_tensor      = */ ggml_backend_ssd_buffer_cpy_tensor,
+    /* .clear           = */ ggml_backend_ssd_buffer_clear,
+    /* .reset           = */ NULL,
+};
+
+static const char * ggml_backend_ssd_buffer_type_get_name(ggml_backend_buffer_type_t buft) {
+    GGML_UNUSED(buft);
+    return "KV_SSD";
+}
+
+static ggml_backend_buffer_t ggml_backend_ssd_buffer_type_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size) {
+    const std::string path = ggml_backend_ssd_file_path();
+    auto * ctx = new ggml_backend_ssd_buffer_context();
+    ctx->size = size;
+
+#ifdef _WIN32
+    ctx->file = CreateFileA(
+        path.c_str(),
+        GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_RANDOM_ACCESS,
+        NULL);
+
+    if (ctx->file == INVALID_HANDLE_VALUE) {
+        GGML_LOG_ERROR("%s: failed to open SSD KV file %s\n", __func__, path.c_str());
+        delete ctx;
+        return NULL;
+    }
+
+    LARGE_INTEGER li_size;
+    li_size.QuadPart = (LONGLONG) size;
+    if (!SetFilePointerEx(ctx->file, li_size, NULL, FILE_BEGIN) || !SetEndOfFile(ctx->file)) {
+        GGML_LOG_ERROR("%s: failed to resize SSD KV file %s to %zu bytes\n", __func__, path.c_str(), size);
+        CloseHandle(ctx->file);
+        delete ctx;
+        return NULL;
+    }
+
+    ctx->mapping = CreateFileMappingA(ctx->file, NULL, PAGE_READWRITE, li_size.HighPart, li_size.LowPart, NULL);
+    if (!ctx->mapping) {
+        GGML_LOG_ERROR("%s: failed to create SSD KV mapping for %s\n", __func__, path.c_str());
+        CloseHandle(ctx->file);
+        delete ctx;
+        return NULL;
+    }
+
+    ctx->data = MapViewOfFile(ctx->mapping, FILE_MAP_ALL_ACCESS, 0, 0, size);
+    if (!ctx->data) {
+        GGML_LOG_ERROR("%s: failed to map SSD KV file %s\n", __func__, path.c_str());
+        CloseHandle(ctx->mapping);
+        CloseHandle(ctx->file);
+        delete ctx;
+        return NULL;
+    }
+#else
+    ctx->fd = open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0600);
+    if (ctx->fd < 0) {
+        GGML_LOG_ERROR("%s: failed to open SSD KV file %s\n", __func__, path.c_str());
+        delete ctx;
+        return NULL;
+    }
+
+    if (ftruncate(ctx->fd, (off_t) size) != 0) {
+        GGML_LOG_ERROR("%s: failed to resize SSD KV file %s to %zu bytes\n", __func__, path.c_str(), size);
+        close(ctx->fd);
+        delete ctx;
+        return NULL;
+    }
+
+    ctx->data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->fd, 0);
+    if (ctx->data == MAP_FAILED) {
+        GGML_LOG_ERROR("%s: failed to map SSD KV file %s\n", __func__, path.c_str());
+        close(ctx->fd);
+        delete ctx;
+        return NULL;
+    }
+#endif
+
+    GGML_LOG_INFO("%s: SSD KV mmap file %s, size %.2f MiB\n", __func__, path.c_str(), size / 1024.0 / 1024.0);
+    return ggml_backend_buffer_init(buft, ggml_backend_ssd_buffer_i, ctx, size);
+}
+
+static size_t ggml_backend_ssd_buffer_type_get_alignment(ggml_backend_buffer_type_t buft) {
+    GGML_UNUSED(buft);
+    return TENSOR_ALIGNMENT;
+}
+
+static bool ggml_backend_ssd_buffer_type_is_host(ggml_backend_buffer_type_t buft) {
+    GGML_UNUSED(buft);
+    return true;
+}
+
+ggml_backend_buffer_type_t ggml_backend_ssd_buffer_type(void) {
+    static struct ggml_backend_buffer_type ggml_backend_ssd_buffer_type = {
+        /* .iface   = */ {
+            /* .get_name         = */ ggml_backend_ssd_buffer_type_get_name,
+            /* .alloc_buffer     = */ ggml_backend_ssd_buffer_type_alloc_buffer,
+            /* .get_alignment    = */ ggml_backend_ssd_buffer_type_get_alignment,
+            /* .get_max_size     = */ NULL,
+            /* .get_alloc_size   = */ NULL,
+            /* .is_host          = */ ggml_backend_ssd_buffer_type_is_host,
+        },
+        /* .device  = */ NULL,
+        /* .context = */ NULL,
+    };
+
+    return &ggml_backend_ssd_buffer_type;
 }

@@ -203,6 +203,11 @@ extern "C" {
         LLAMA_CONTEXT_TYPE_MTP     = 1,
     };
 
+    enum llama_kv_backend_type {
+        LLAMA_KV_BACKEND_TYPE_RAM = 0,
+        LLAMA_KV_BACKEND_TYPE_SSD = 1,
+    };
+
     // TODO: simplify (https://github.com/ggml-org/llama.cpp/pull/9294#pullrequestreview-2286561979)
     typedef struct llama_token_data {
         llama_token id; // token id
@@ -364,6 +369,10 @@ extern "C" {
 
         enum ggml_type type_k; // data type for K cache [EXPERIMENTAL]
         enum ggml_type type_v; // data type for V cache [EXPERIMENTAL]
+
+        enum llama_kv_backend_type kv_backend; // KV cache backing store [EXPERIMENTAL]
+        const char * kv_path;                  // SSD mmap path when kv_backend is SSD
+        uint32_t kv_window;                    // active sliding KV cells when kv_backend is SSD
 
         // Abort callback
         // if it returns true, execution of llama_decode() will be aborted

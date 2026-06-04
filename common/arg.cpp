@@ -30,6 +30,7 @@
 #include <list>
 #include <regex>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <thread> // for hardware_concurrency
 #include <vector>
@@ -2068,6 +2069,33 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.cache_type_v = kv_cache_type_from_str(value);
         }
     ).set_env("LLAMA_ARG_CACHE_TYPE_V"));
+    add_opt(common_arg(
+        {"--kv-backend"}, "BACKEND",
+        "KV cache backing store: ram or ssd (experimental, default: ram)",
+        [](common_params & params, const std::string & value) {
+            if (value != "ram" && value != "ssd") {
+                throw std::invalid_argument("--kv-backend must be 'ram' or 'ssd'");
+            }
+            params.kv_backend = value;
+        }
+    ).set_env("LLAMA_ARG_KV_BACKEND"));
+    add_opt(common_arg(
+        {"--kv-path"}, "PATH",
+        "path to SSD mmap file or directory when --kv-backend ssd is used",
+        [](common_params & params, const std::string & value) {
+            params.kv_path = value;
+        }
+    ).set_env("LLAMA_ARG_KV_PATH"));
+    add_opt(common_arg(
+        {"--kv-window"}, "N",
+        string_format("active sliding KV cells when --kv-backend ssd is used (default: %d)", params.kv_window),
+        [](common_params & params, int value) {
+            if (value <= 0) {
+                throw std::invalid_argument("--kv-window must be positive");
+            }
+            params.kv_window = value;
+        }
+    ).set_env("LLAMA_ARG_KV_WINDOW"));
     add_opt(common_arg(
         {"--hellaswag"},
         "compute HellaSwag score over random tasks from datafile supplied with -f",

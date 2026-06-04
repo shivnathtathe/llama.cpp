@@ -6,21 +6,45 @@
 
 #include <algorithm>
 #include <cassert>
+#include <filesystem>
+#include <string>
 
 //
 // llama_kv_cache_iswa
 //
+
+static std::string llama_kv_cache_iswa_ssd_path(const std::string & path, const char * suffix) {
+    if (path.empty()) {
+        return {};
+    }
+
+    const std::string file_name = std::string("llama-kv-cache-") + suffix + ".mmap";
+
+    std::error_code ec;
+    const std::filesystem::path fs_path(path);
+    if (std::filesystem::is_directory(fs_path, ec)) {
+        return (fs_path / file_name).string();
+    }
+
+    if (!path.empty() && (path.back() == '/' || path.back() == '\\')) {
+        return (fs_path / file_name).string();
+    }
+
+    return path + "." + suffix;
+}
 
 llama_kv_cache_iswa::llama_kv_cache_iswa(
         const llama_model & model,
                 ggml_type   type_k,
                 ggml_type   type_v,
                      bool   v_trans,
-                     bool   offload,
-                     bool   swa_full,
-                     bool   unified,
-                 uint32_t   kv_size,
-                 uint32_t   n_seq_max,
+                      bool   offload,
+                      bool   swa_full,
+                      bool   unified,
+                      bool   ssd,
+         const std::string & ssd_path,
+                  uint32_t   kv_size,
+                  uint32_t   n_seq_max,
                  uint32_t   n_ubatch,
                  uint32_t   n_pad,
     const layer_filter_cb & filter,
@@ -59,16 +83,19 @@ llama_kv_cache_iswa::llama_kv_cache_iswa(
 
     LLAMA_LOG_INFO("%s: creating non-SWA KV cache, size = %u cells\n", __func__, size_base);
 
+    const std::string ssd_path_base = ssd ? llama_kv_cache_iswa_ssd_path(ssd_path, "base") : std::string();
+    const std::string ssd_path_swa  = ssd ? llama_kv_cache_iswa_ssd_path(ssd_path, "swa")  : std::string();
+
     kv_base = std::make_unique<llama_kv_cache>(
             model, hparams, type_k, type_v,
-            v_trans, offload, unified, size_base, n_seq_max, n_pad,
+            v_trans, offload, unified, ssd, ssd_path_base, size_base, n_seq_max, n_pad,
             0, LLAMA_SWA_TYPE_NONE, filter_base, reuse);
 
     LLAMA_LOG_INFO("%s: creating     SWA KV cache, size = %u cells\n", __func__, size_swa);
 
     kv_swa = std::make_unique<llama_kv_cache>(
             model, hparams, type_k, type_v,
-            v_trans, offload, unified, size_swa, n_seq_max, n_pad,
+            v_trans, offload, unified, ssd, ssd_path_swa, size_swa, n_seq_max, n_pad,
             hparams.n_swa, hparams.swa_type, filter_swa, reuse);
 }
 

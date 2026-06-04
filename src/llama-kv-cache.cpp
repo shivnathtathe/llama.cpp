@@ -85,6 +85,8 @@ llama_kv_cache::llama_kv_cache(
                      bool   v_trans,
                      bool   offload,
                      bool   unified,
+                     bool   ssd,
+        const std::string & ssd_path,
                  uint32_t   kv_size,
                  uint32_t   n_seq_max,
                  uint32_t   n_pad,
@@ -191,7 +193,11 @@ llama_kv_cache::llama_kv_cache(
 
         ggml_backend_buffer_type_t buft = ggml_backend_cpu_buffer_type();
 
-        if (offload) {
+        if (ssd) {
+            ggml_backend_ssd_set_path(ssd_path.c_str());
+            buft = ggml_backend_ssd_buffer_type();
+            dev_name = "KV_SSD";
+        } else if (offload) {
             auto * dev = model.dev_layer(il);
             buft = ggml_backend_dev_buffer_type(dev);
 
@@ -280,6 +286,9 @@ llama_kv_cache::llama_kv_cache(
                 (float)(memory_size_k + memory_size_v) / (1024.0f * 1024.0f), kv_size, (int) layers.size(), n_seq_max, n_stream,
                 ggml_type_name(type_k), (float)memory_size_k / (1024.0f * 1024.0f),
                 ggml_type_name(type_v), (float)memory_size_v / (1024.0f * 1024.0f));
+        if (ssd) {
+            LLAMA_LOG_WARN("%s: SSD KV prototype uses a CPU-addressable mmap file; CPU attention still dereferences KV pages as memory\n", __func__);
+        }
     }
 
     const char * LLAMA_ATTN_ROT_DISABLE = getenv("LLAMA_ATTN_ROT_DISABLE");

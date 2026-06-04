@@ -7,6 +7,7 @@
 #include "llama-memory-recurrent.h"
 
 #include <memory>
+#include <string>
 #include <vector>
 
 //
@@ -35,9 +36,11 @@ public:
                             /* common */
                  uint32_t   n_seq_max,
                  uint32_t   n_rs_seq,
-                     bool   offload,
-                     bool   unified,
-                            /* layer filters */
+                      bool   offload,
+                      bool   unified,
+                      bool   ssd,
+         const std::string & ssd_path,
+                             /* layer filters */
     const layer_filter_cb & filter_attn = nullptr,
     const layer_filter_cb & filter_recr = nullptr);
 

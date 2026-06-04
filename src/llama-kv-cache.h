@@ -6,6 +6,7 @@
 #include "llama-memory.h"
 
 #include <unordered_map>
+#include <string>
 #include <vector>
 
 struct llama_cparams;
@@ -101,10 +102,12 @@ public:
             const llama_hparams & hparams,
                     ggml_type   type_k,
                     ggml_type   type_v,
-                         bool   v_trans,
-                         bool   offload,
-                         bool   unified,
-                     uint32_t   kv_size,
+                          bool   v_trans,
+                          bool   offload,
+                          bool   unified,
+                          bool   ssd,
+             const std::string & ssd_path,
+                      uint32_t   kv_size,
                      uint32_t   n_seq_max,
                      uint32_t   n_pad,
                      uint32_t   n_swa,

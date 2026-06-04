@@ -25,9 +25,11 @@ llama_memory_hybrid::llama_memory_hybrid(
                             /* common */
                  uint32_t   n_seq_max,
                  uint32_t   n_rs_seq,
-                     bool   offload,
-                     bool   unified,
-                            /* layer filters */
+                      bool   offload,
+                      bool   unified,
+                      bool   ssd,
+         const std::string & ssd_path,
+                             /* layer filters */
     const layer_filter_cb & filter_attn,
     const layer_filter_cb & filter_recr) :
     hparams(model.hparams),
@@ -39,6 +41,8 @@ llama_memory_hybrid::llama_memory_hybrid(
         v_trans,
         offload,
         unified,
+        ssd,
+        ssd_path,
         kv_size,
         n_seq_max,
         n_pad,

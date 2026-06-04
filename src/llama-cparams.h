@@ -3,6 +3,7 @@
 #include "llama.h"
 
 #include <cstdint>
+#include <string>
 
 #define LLAMA_MAX_SEQ 256
 
@@ -43,6 +44,10 @@ struct llama_cparams {
     bool op_offload;
     bool kv_unified;
     bool pipeline_parallel;
+
+    enum llama_kv_backend_type kv_backend;
+    std::string kv_path;
+    uint32_t kv_window;
 
     enum llama_context_type ctx_type;
     enum llama_pooling_type pooling_type;

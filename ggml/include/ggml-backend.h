@@ -430,6 +430,11 @@ extern "C" {
     GGML_API ggml_backend_buffer_t      ggml_backend_cpu_buffer_from_ptr(void * ptr, size_t size);
     GGML_API ggml_backend_buffer_type_t ggml_backend_cpu_buffer_type(void);
 
+    // Experimental SSD-backed host buffer type. The buffer is CPU-addressable
+    // and backed by a file mapping configured with ggml_backend_ssd_set_path().
+    GGML_API void                       ggml_backend_ssd_set_path(const char * path);
+    GGML_API ggml_backend_buffer_type_t ggml_backend_ssd_buffer_type(void);
+
 #ifdef  __cplusplus
 }
 #endif

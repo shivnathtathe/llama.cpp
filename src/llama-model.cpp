@@ -1450,7 +1450,9 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
             }
         }
     }
-    ml.done_getting_tensors();
+    // Gemma 4 Ollama blobs include embedded vision/audio tensors. For text-only
+    // server inference we intentionally load only the language-model tensors.
+    ml.done_getting_tensors(arch == LLM_ARCH_GEMMA4);
 
     GGML_ASSERT(!(output && tok_embd &&
             strcmp(output->name, tok_embd->name) == 0 &&
@@ -2018,6 +2020,9 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                     params.ctx_type == LLAMA_CONTEXT_TYPE_MTP &&
                     (arch == LLM_ARCH_QWEN35 || arch == LLM_ARCH_QWEN35MOE);
 
+                const bool kv_ssd = cparams.kv_backend == LLAMA_KV_BACKEND_TYPE_SSD;
+                const uint32_t kv_size_attn = kv_ssd ? std::min<uint32_t>(cparams.n_ctx_seq, cparams.kv_window) : cparams.n_ctx_seq;
+
                 if (llm_arch_is_recurrent(arch)) {
                     res = new llama_memory_recurrent(
                             *this,
@@ -2061,7 +2066,7 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             /* attn_type_v       */ params.type_v,
                             /* attn_v_trans      */ !cparams.flash_attn,
                             /* attn_swa_full     */ params.swa_full,
-                            /* attn_kv_size      */ cparams.n_ctx_seq,
+                            /* attn_kv_size      */ kv_size_attn,
                             /* attn_n_ubatch     */ cparams.n_ubatch,
                             /* attn_n_pad        */ 1,
                             /* recurrent_type_r  */ GGML_TYPE_F32,
@@ -2071,6 +2076,8 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             /* n_rs_seq          */ cparams.n_rs_seq,
                             /* offload           */ cparams.offload_kqv,
                             /* unified           */ cparams.kv_unified,
+                            /* ssd               */ kv_ssd,
+                            /* ssd_path          */ cparams.kv_path,
                             /* filter_attn       */ std::move(filter_attn),
                             /* filter_recr       */ std::move(filter_recr));
                     } else {
@@ -2079,7 +2086,7 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             /* attn_type_k       */ params.type_k,
                             /* attn_type_v       */ params.type_v,
                             /* attn_v_trans      */ !cparams.flash_attn,
-                            /* attn_kv_size      */ cparams.n_ctx_seq,
+                            /* attn_kv_size      */ kv_size_attn,
                             /* attn_n_pad        */ 1,
                             /* attn_n_swa        */ hparams.n_swa,
                             /* attn_swa_type     */ hparams.swa_type,
@@ -2090,12 +2097,16 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                             /* n_rs_seq          */ cparams.n_rs_seq,
                             /* offload           */ cparams.offload_kqv,
                             /* unified           */ cparams.kv_unified,
+                            /* ssd               */ kv_ssd,
+                            /* ssd_path          */ cparams.kv_path,
                             /* filter_attn       */ std::move(filter_attn),
                             /* filter_recr       */ std::move(filter_recr));
                     }
                 } else {
                     llama_memory_i::layer_reuse_cb reuse = nullptr;
                     llama_kv_cache::layer_filter_cb filter = nullptr;
+                    const uint32_t n_swa_attn = kv_ssd ? kv_size_attn : hparams.n_swa;
+                    const llama_swa_type swa_type_attn = kv_ssd ? LLAMA_SWA_TYPE_STANDARD : hparams.swa_type;
 
                     if (arch == LLM_ARCH_GEMMA3N || arch == LLM_ARCH_GEMMA4) {
                         reuse = [&](int32_t il) {
@@ -2123,7 +2134,9 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                                 cparams.offload_kqv,
                                 params.swa_full,
                                 cparams.kv_unified,
-                                cparams.n_ctx_seq,
+                                kv_ssd,
+                                cparams.kv_path,
+                                kv_size_attn,
                                 cparams.n_seq_max,
                                 cparams.n_ubatch,
                                 1,
@@ -2140,11 +2153,13 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                                 !cparams.flash_attn,
                                 cparams.offload_kqv,
                                 cparams.kv_unified,
-                                cparams.n_ctx_seq,
+                                kv_ssd,
+                                cparams.kv_path,
+                                kv_size_attn,
                                 cparams.n_seq_max,
                                 1,
-                                hparams.n_swa,
-                                hparams.swa_type,
+                                n_swa_attn,
+                                swa_type_attn,
                                 filter,
                                 nullptr);
                     }
