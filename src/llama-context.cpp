@@ -72,6 +72,7 @@ llama_context::llama_context(
     cparams.pooling_type     = params.pooling_type;
     cparams.warmup           = false;
     cparams.kv_backend       = params.kv_backend;
+    cparams.kv_compression_type = params.kv_compression_type;
     cparams.kv_path          = params.kv_path ? params.kv_path : "";
     cparams.kv_window        = params.kv_window;
 
@@ -238,6 +239,7 @@ llama_context::llama_context(
     LLAMA_LOG_INFO("%s: causal_attn   = %d\n",   __func__, cparams.causal_attn);
     LLAMA_LOG_INFO("%s: flash_attn    = %s\n",   __func__, llama_flash_attn_type_name(params.flash_attn_type));
     LLAMA_LOG_INFO("%s: kv_unified    = %s\n",   __func__, cparams.kv_unified ? "true" : "false");
+    LLAMA_LOG_INFO("%s: kv_compression= %s\n",   __func__, llama_kv_compression_type_name(cparams.kv_compression_type));
     LLAMA_LOG_INFO("%s: kv_backend    = %s\n",   __func__, cparams.kv_backend == LLAMA_KV_BACKEND_TYPE_SSD ? "ssd" : "ram");
     if (cparams.kv_backend == LLAMA_KV_BACKEND_TYPE_SSD) {
         LLAMA_LOG_INFO("%s: kv_path       = %s\n", __func__, cparams.kv_path.c_str());
@@ -3381,6 +3383,7 @@ llama_context_params llama_context_default_params() {
         /*.cb_eval_user_data           =*/ nullptr,
         /*.type_k                      =*/ GGML_TYPE_F16,
         /*.type_v                      =*/ GGML_TYPE_F16,
+        /*.kv_compression_type         =*/ LLAMA_KV_COMPRESSION_TYPE_NONE,
         /*.kv_backend                  =*/ LLAMA_KV_BACKEND_TYPE_RAM,
         /*.kv_path                     =*/ nullptr,
         /*.kv_window                   =*/ 2048,
@@ -3415,6 +3418,23 @@ llama_context * llama_init_from_model(
     if (params.n_ctx == 0 && model->hparams.n_ctx_train == 0) {
         LLAMA_LOG_ERROR("%s: n_ctx and model->hparams.n_ctx_train cannot both be zero\n", __func__);
         return nullptr;
+    }
+
+    if (params.kv_compression_type != LLAMA_KV_COMPRESSION_TYPE_NONE) {
+        LLAMA_LOG_WARN("%s: kv_compression=%s is experimental and maps cache tensors to Q4_0; this is not full TurboQuant\n",
+                __func__, llama_kv_compression_type_name(params.kv_compression_type));
+
+        switch (params.kv_compression_type) {
+            case LLAMA_KV_COMPRESSION_TYPE_TQ4_V:
+                params.type_v = GGML_TYPE_Q4_0;
+                break;
+            case LLAMA_KV_COMPRESSION_TYPE_TQ4:
+                params.type_k = GGML_TYPE_Q4_0;
+                params.type_v = GGML_TYPE_Q4_0;
+                break;
+            case LLAMA_KV_COMPRESSION_TYPE_NONE:
+                break;
+        }
     }
 
     if (params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED && model->arch == LLM_ARCH_GROK) {

@@ -46,6 +46,18 @@ const char * llama_flash_attn_type_name(enum llama_flash_attn_type flash_attn_ty
     GGML_ABORT("fatal error");
 }
 
+const char * llama_kv_compression_type_name(enum llama_kv_compression_type kv_compression_type) {
+    switch (kv_compression_type) {
+        case LLAMA_KV_COMPRESSION_TYPE_NONE:
+            return "none";
+        case LLAMA_KV_COMPRESSION_TYPE_TQ4_V:
+            return "tq4-v";
+        case LLAMA_KV_COMPRESSION_TYPE_TQ4:
+            return "tq4";
+    }
+    GGML_ABORT("fatal error");
+}
+
 struct llama_sampler_chain_params llama_sampler_chain_default_params() {
     struct llama_sampler_chain_params result = {
         /*.no_perf =*/ true,

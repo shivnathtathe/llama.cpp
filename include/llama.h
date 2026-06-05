@@ -191,6 +191,14 @@ extern "C" {
 
     LLAMA_API const char * llama_flash_attn_type_name(enum llama_flash_attn_type flash_attn_type);
 
+    enum llama_kv_compression_type {
+        LLAMA_KV_COMPRESSION_TYPE_NONE = 0,
+        LLAMA_KV_COMPRESSION_TYPE_TQ4_V = 1,
+        LLAMA_KV_COMPRESSION_TYPE_TQ4   = 2,
+    };
+
+    LLAMA_API const char * llama_kv_compression_type_name(enum llama_kv_compression_type kv_compression_type);
+
     enum llama_split_mode {
         LLAMA_SPLIT_MODE_NONE   = 0, // single GPU
         LLAMA_SPLIT_MODE_LAYER  = 1, // split layers and KV across GPUs
@@ -370,6 +378,7 @@ extern "C" {
         enum ggml_type type_k; // data type for K cache [EXPERIMENTAL]
         enum ggml_type type_v; // data type for V cache [EXPERIMENTAL]
 
+        enum llama_kv_compression_type kv_compression_type; // KV cache compression mode [EXPERIMENTAL]
         enum llama_kv_backend_type kv_backend; // KV cache backing store [EXPERIMENTAL]
         const char * kv_path;                  // SSD mmap path when kv_backend is SSD
         uint32_t kv_window;                    // active sliding KV cells when kv_backend is SSD

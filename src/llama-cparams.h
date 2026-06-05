@@ -46,6 +46,7 @@ struct llama_cparams {
     bool pipeline_parallel;
 
     enum llama_kv_backend_type kv_backend;
+    enum llama_kv_compression_type kv_compression_type;
     std::string kv_path;
     uint32_t kv_window;
 

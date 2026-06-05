@@ -564,6 +564,7 @@ struct common_params {
 
     ggml_type cache_type_k = GGML_TYPE_F16; // KV cache data type for the K
     ggml_type cache_type_v = GGML_TYPE_F16; // KV cache data type for the V
+    enum llama_kv_compression_type kv_compression_type = LLAMA_KV_COMPRESSION_TYPE_NONE; // KV cache compression mode
     std::string kv_backend = "ram";         // KV cache backing store: ram or ssd                         // NOLINT
     std::string kv_path    = "";            // SSD mmap path for KV cache when kv_backend=ssd              // NOLINT
     int32_t kv_window      = 2048;          // active sliding KV cells when kv_backend=ssd

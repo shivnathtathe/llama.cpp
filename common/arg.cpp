@@ -417,6 +417,19 @@ static std::string get_all_kv_cache_types() {
     return msg.str();
 }
 
+static llama_kv_compression_type kv_compression_type_from_str(const std::string & s) {
+    if (s == "none") {
+        return LLAMA_KV_COMPRESSION_TYPE_NONE;
+    }
+    if (s == "tq4-v") {
+        return LLAMA_KV_COMPRESSION_TYPE_TQ4_V;
+    }
+    if (s == "tq4") {
+        return LLAMA_KV_COMPRESSION_TYPE_TQ4;
+    }
+    throw std::runtime_error("Unsupported KV compression type: " + s);
+}
+
 static bool parse_bool_value(const std::string & value) {
     if (is_truthy(value)) {
         return true;
@@ -2069,6 +2082,18 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.cache_type_v = kv_cache_type_from_str(value);
         }
     ).set_env("LLAMA_ARG_CACHE_TYPE_V"));
+    add_opt(common_arg(
+        {"--kv-compression"}, "TYPE",
+        string_format(
+            "experimental KV cache compression mode: none, tq4-v, or tq4\n"
+            "tq4-v maps V cache to Q4_0; tq4 maps K and V cache to Q4_0\n"
+            "(default: %s)",
+            llama_kv_compression_type_name(params.kv_compression_type)
+        ),
+        [](common_params & params, const std::string & value) {
+            params.kv_compression_type = kv_compression_type_from_str(value);
+        }
+    ).set_env("LLAMA_ARG_KV_COMPRESSION"));
     add_opt(common_arg(
         {"--kv-backend"}, "BACKEND",
         "KV cache backing store: ram or ssd (experimental, default: ram)",

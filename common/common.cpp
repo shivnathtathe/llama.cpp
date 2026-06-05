@@ -1588,6 +1588,7 @@ struct llama_context_params common_context_params_to_llama(const common_params &
 
     cparams.type_k = params.cache_type_k;
     cparams.type_v = params.cache_type_v;
+    cparams.kv_compression_type = params.kv_compression_type;
     cparams.kv_backend = params.kv_backend == "ssd" ? LLAMA_KV_BACKEND_TYPE_SSD : LLAMA_KV_BACKEND_TYPE_RAM;
     cparams.kv_path = params.kv_path.empty() ? nullptr : params.kv_path.c_str();
     cparams.kv_window = std::max(params.kv_window, 0);
